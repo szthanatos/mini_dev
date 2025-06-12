@@ -1,6 +1,6 @@
 name: mini_dev
 dependencies:
-  - python=3.11.5
+  - python=3.12
   - pip=24.0
   - annotated-types=0.7.0
   - anyio=4.4.0

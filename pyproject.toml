@@ -1,9 +1,9 @@
 [project]
-name = "app"
+name = "mini_dev"
 version = "0.1.0"
-description = "Add your description here"
+description = "BIRD-bench mini_dev"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "annotated-types>=0.7.0",
     "anyio>=4.9.0",
