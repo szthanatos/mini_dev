@@ -6,8 +6,8 @@ import multiprocessing as mp
 from func_timeout import func_timeout, FunctionTimedOut
 from evaluation_utils import (
     load_json_data,
-    execute_sql,
     package_sqls,
+    parse_dsn,
     sort_results,
     print_data,
     connect_db,
@@ -26,14 +26,14 @@ def clean_abnormal(input):
     mean = np.mean(input, axis=0)
     std = np.std(input, axis=0)
     for x in input:
-        if x < mean + 3 * std and x > mean - 3 * std:
+        if mean + 3 * std > x > mean - 3 * std:
             processed_list.append(x)
     return processed_list
 
 
-def execute_sql(sql, db_path, sql_dialect, return_time=False):
+def _execute_sql(sql, sql_dialect, db_path, dsn: dict = None, return_time=False):
     # Connect to the database
-    conn = connect_db(sql_dialect, db_path)
+    conn = connect_db(sql_dialect, db_path, dsn)
     start_time = time.time()
     cursor = conn.cursor()
     cursor.execute(sql)
@@ -47,20 +47,19 @@ def execute_sql(sql, db_path, sql_dialect, return_time=False):
 
 
 def iterated_execute_sql(
-    predicted_sql, ground_truth, db_path, iterate_num, sql_dialect
+    predicted_sql, ground_truth, db_path, iterate_num, sql_dialect, dsn
 ):
     diff_list = []
-    predicted_res = execute_sql(predicted_sql, db_path, sql_dialect)
-    ground_truth_res = execute_sql(ground_truth, db_path, sql_dialect)
-    reward = 0
+    predicted_res = _execute_sql(predicted_sql, sql_dialect, db_path, dsn)
+    ground_truth_res = _execute_sql(ground_truth, sql_dialect, db_path, dsn)
     time_ratio = 0
     if set(predicted_res) == set(ground_truth_res):
         for _ in range(iterate_num):
-            predicted_time = execute_sql(
-                predicted_sql, db_path, sql_dialect, return_time=True
+            predicted_time = _execute_sql(
+                predicted_sql, sql_dialect, db_path, dsn, return_time=True
             )
-            ground_truth_time = execute_sql(
-                ground_truth, db_path, sql_dialect, return_time=True
+            ground_truth_time = _execute_sql(
+                ground_truth, sql_dialect, db_path, dsn, return_time=True
             )
             diff_list.append(ground_truth_time / predicted_time)
         processed_diff_list = clean_abnormal(diff_list)
@@ -69,11 +68,11 @@ def iterated_execute_sql(
         reward = 0
     elif time_ratio >= 2:
         reward = 1.25
-    elif time_ratio >= 1 and time_ratio < 2:
+    elif 1 <= time_ratio < 2:
         reward = 1
-    elif time_ratio >= 0.5 and time_ratio < 1:
+    elif 0.5 <= time_ratio < 1:
         reward = 0.75
-    elif time_ratio >= 0.25 and time_ratio < 0.5:
+    elif 0.25 <= time_ratio < 0.5:
         reward = 0.5
     else:
         reward = 0.25
@@ -82,7 +81,14 @@ def iterated_execute_sql(
 
 
 def execute_model(
-    predicted_sql, ground_truth, db_place, idx, iterate_num, meta_time_out, sql_dialect
+    predicted_sql,
+    ground_truth,
+    db_place,
+    idx,
+    iterate_num,
+    meta_time_out,
+    sql_dialect,
+    dsn,
 ):
     try:
         # you can personalize the total timeout number
@@ -91,7 +97,7 @@ def execute_model(
         reward = func_timeout(
             meta_time_out * iterate_num,
             iterated_execute_sql,
-            args=(predicted_sql, ground_truth, db_place, iterate_num, sql_dialect),
+            args=(predicted_sql, ground_truth, db_place, iterate_num, sql_dialect, dsn),
         )
     except KeyboardInterrupt:
         sys.exit(0)
@@ -112,6 +118,7 @@ def run_sqls_parallel(
     iterate_num=100,
     meta_time_out=30.0,
     sql_dialect="SQLite",
+    dsn: dict = None,
 ):
     pool = mp.Pool(processes=num_cpus)
     for i, sql_pair in enumerate(sqls):
@@ -126,6 +133,7 @@ def run_sqls_parallel(
                 iterate_num,
                 meta_time_out,
                 sql_dialect,
+                dsn,
             ),
             callback=result_callback,
         )
@@ -201,15 +209,14 @@ if __name__ == "__main__":
     args_parser.add_argument("--num_cpus", type=int, default=1)
     args_parser.add_argument("--meta_time_out", type=float, default=30.0)
     args_parser.add_argument("--diff_json_path", type=str, default="")
+    args_parser.add_argument("--output_log_path", type=str, default="")
     args_parser.add_argument("--sql_dialect", type=str, default="SQLite")
-    args_parser.add_argument("--output_log_path", type=str, default="SQLite")
+    args_parser.add_argument("--dsn", type=str, default="")
     args = args_parser.parse_args()
     exec_result = []
 
     pred_queries, db_paths = package_sqls(
-        args.predicted_sql_path,
-        args.db_root_path,
-        mode='pred'
+        args.predicted_sql_path, args.db_root_path, mode="pred"
     )
     # generate ground truth sqls:
     gt_queries, db_paths_gt = package_sqls(
@@ -218,12 +225,15 @@ if __name__ == "__main__":
         mode="gt",
     )
     query_pairs = list(zip(pred_queries, gt_queries))
+    dsn = parse_dsn(args.dsn)
+
     run_sqls_parallel(
         query_pairs,
         db_places=db_paths_gt,
         num_cpus=args.num_cpus,
         meta_time_out=args.meta_time_out,
         sql_dialect=args.sql_dialect,
+        dsn=dsn,
     )
     exec_result = sort_results(exec_result)
     # print_reward_category(exec_result, args.engine, args.sql_dialect)
@@ -232,7 +242,9 @@ if __name__ == "__main__":
         exec_result, args.diff_json_path
     )
     score_lists = [simple_ves, moderate_ves, challenging_ves, ves]
-    print_data(score_lists, count_lists, metric="R-VES",result_log_file=args.output_log_path)
+    print_data(
+        score_lists, count_lists, metric="R-VES", result_log_file=args.output_log_path
+    )
     print(
         "==========================================================================================="
     )

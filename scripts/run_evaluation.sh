@@ -20,6 +20,10 @@ EXEC_CMD="uv run" # Options: "uv run" | "conda run -n mini_dev"
 # kind of DB you use
 SQL_DIALECT="SQLite" # Options: "SQLite" | "PostgreSQL" | "MySQL"
 
+# how to connect to your MySQL/PostgreSQL
+# format: db_type://username:password@host:port/dbname
+DSN="mysql://root:123456@localhost:3306/BIRD"
+
 # your predict sql json path, which may generate by llm before
 # so make it same as your DATA_OUTPUT_PATH in run_gpt.sh
 PREDICTED_SQL_PATH="exp_result/predict_mini_dev_deepseek-chat_cot_SQLite.json"
@@ -56,16 +60,17 @@ function eval() {
   local eval_name="${1}"
   local python_script="${2}"
 
-  echo "Starting to compare with knowledge for ${1}"
-  ${EXEC_CMD} python -u ${python_script} \
-    --db_root_path "${DB_ROOT_PATH}" \
+  echo "Starting to compare with knowledge for ${eval_name}"
+  ${EXEC_CMD} python -u "${python_script}" \
     --predicted_sql_path "${PREDICTED_SQL_PATH}" \
     --ground_truth_path "${ground_truth_path}" \
+    --db_root_path "${DB_ROOT_PATH}" \
     --num_cpus "${NUM_CPUS}" \
-    --output_log_path "${OUTPUT_LOG_PATH}" \
-    --diff_json_path "${diff_json_path}" \
     --meta_time_out "${META_TIME_OUT}" \
-    --sql_dialect "${SQL_DIALECT}"
+    --diff_json_path "${diff_json_path}" \
+    --output_log_path "${OUTPUT_LOG_PATH}" \
+    --sql_dialect "${SQL_DIALECT}" \
+    --dsn "${DSN}"
 }
 
 function conform() {

@@ -3,11 +3,12 @@ import argparse
 import multiprocessing as mp
 from func_timeout import func_timeout, FunctionTimedOut
 from evaluation_utils import (
-    load_json_data,
     execute_sql,
+    load_json_data,
     package_sqls,
-    sort_results,
+    parse_dsn,
     print_data,
+    sort_results,
 )
 
 
@@ -23,32 +24,41 @@ def calculate_ex(predicted_res, ground_truth_res):
 
 
 def execute_model(
-    predicted_sql, ground_truth, db_place, idx, meta_time_out, sql_dialect
+    predicted_sql, ground_truth, db_place, idx, meta_time_out, sql_dialect, dsn
 ):
     try:
         res = func_timeout(
             meta_time_out,
             execute_sql,
-            args=(predicted_sql, ground_truth, db_place, sql_dialect, calculate_ex),
+            args=(
+                predicted_sql,
+                ground_truth,
+                calculate_ex,
+                sql_dialect,
+                db_place,
+                dsn,
+            ),
         )
     except KeyboardInterrupt:
         sys.exit(0)
     except FunctionTimedOut:
-        result = [("timeout",)]
         res = 0
     except Exception:
-        result = [("error",)]  # possibly len(query) > 512 or not executable
         res = 0
     result = {"sql_idx": idx, "res": res}
     return result
 
 
 def run_sqls_parallel(
-    sqls, db_places, num_cpus=1, meta_time_out=30.0, sql_dialect="SQLite"
+    sqls,
+    db_places,
+    num_cpus=1,
+    meta_time_out=30.0,
+    sql_dialect="SQLite",
+    dsn: dict = None,
 ):
     pool = mp.Pool(processes=num_cpus)
     for i, sql_pair in enumerate(sqls):
-
         predicted_sql, ground_truth = sql_pair
         pool.apply_async(
             execute_model,
@@ -59,6 +69,7 @@ def run_sqls_parallel(
                 i,
                 meta_time_out,
                 sql_dialect,
+                dsn,
             ),
             callback=result_callback,
         )
@@ -116,15 +127,14 @@ if __name__ == "__main__":
     args_parser.add_argument("--num_cpus", type=int, default=1)
     args_parser.add_argument("--meta_time_out", type=float, default=30.0)
     args_parser.add_argument("--diff_json_path", type=str, default="")
+    args_parser.add_argument("--output_log_path", type=str, default="")
     args_parser.add_argument("--sql_dialect", type=str, default="SQLite")
-    args_parser.add_argument("--output_log_path", type=str, default="SQLite")
+    args_parser.add_argument("--dsn", type=str, default="")
     args = args_parser.parse_args()
     exec_result = []
 
     pred_queries, db_paths = package_sqls(
-        args.predicted_sql_path,
-        args.db_root_path,
-        mode='pred'
+        args.predicted_sql_path, args.db_root_path, mode="pred"
     )
     # generate ground truth sqls:
     gt_queries, db_paths_gt = package_sqls(
@@ -134,6 +144,7 @@ if __name__ == "__main__":
     )
 
     query_pairs = list(zip(pred_queries, gt_queries))
+    dsn = parse_dsn(args.dsn)
 
     run_sqls_parallel(
         query_pairs,
@@ -141,14 +152,17 @@ if __name__ == "__main__":
         num_cpus=args.num_cpus,
         meta_time_out=args.meta_time_out,
         sql_dialect=args.sql_dialect,
+        dsn=dsn,
     )
     exec_result = sort_results(exec_result)
     print("start calculate EX")
     simple_acc, moderate_acc, challenging_acc, acc, count_lists = compute_acc_by_diff(
         exec_result, args.diff_json_path
     )
-    score_lists = [simple_acc, moderate_acc, challenging_acc, acc] 
-    print_data(score_lists, count_lists, metric="EX",result_log_file=args.output_log_path)
+    score_lists = [simple_acc, moderate_acc, challenging_acc, acc]
+    print_data(
+        score_lists, count_lists, metric="EX", result_log_file=args.output_log_path
+    )
     print(
         "==========================================================================================="
     )
