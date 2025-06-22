@@ -28,8 +28,9 @@
 
 1. Use `uv sync` or `conda env create -f environment.yml` to initialize python env.
 2. Run `./scripts/init_dataset.sh` to prepare the dataset.
-3. Run `./script/run_gpt.sh` to generate questions & have the LLM predict SQLs.
-4. Run `./script/run_evaluation.sh` to get all scores;
+3. Run `./scripts/load_data.sh` to import data into mysql/postgres, ignore when using sqlite or import by yourself.
+4. Run `./script/run_gpt.sh` to generate questions & have the LLM predict SQLs.
+5. Run `./script/run_evaluation.sh` to get all scores;
 
    To get specific ex/res-v/soft-f1 score, add parms 1/2/3 at the end.
 
