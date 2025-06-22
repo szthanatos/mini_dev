@@ -11,7 +11,7 @@ deb https://mirrors.aliyun.com/debian/ bullseye-backports main non-free contrib
 EOF
 
 RUN apt-get update && \
-    apt-get install unzip
+    apt-get install unzip mariadb-client postgresql-client
 
 ENV UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
