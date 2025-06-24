@@ -1,2 +1,8 @@
 .DS_Store
 .idea
+.venv
+__pycache__/
+llm/mini_dev_data
+data
+eval_result
+exp_result
