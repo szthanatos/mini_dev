@@ -1,39 +1,48 @@
 #!/usr/bin/env bash
-set -eu
+# ==============================================================================
+#  Downloads and unzips the Bird-Bench minidev dataset.
+#  All configurations can be overridden by environment variables.
+# ==============================================================================
+set -euo pipefail
 
-# --- Data and Path Config ---
-# dataset download url
-PRIMARY_URL="https://bird-bench.oss-cn-beijing.aliyuncs.com/minidev.zip"
-SECONDARY_URL="https://drive.google.com/file/d/1UJyA6I6pTmmhYpwdn8iT9QKrcJqSQAcX/view?usp=sharing"
+# --- Configuration ---
+# No need to change anything by default.
+PRIMARY_URL="${PRIMARY_URL:-https://bird-bench.oss-cn-beijing.aliyuncs.com/minidev.zip}"
+SECONDARY_URL="${SECONDARY_URL:-https://drive.google.com/file/d/1UJyA6I6pTmmhYpwdn8iT9QKrcJqSQAcX/view?usp=sharing}"
+MINIDEV_ZIP="${MINIDEV_ZIP:-llm/mini_dev_data/minidev.zip}"
+DATA_DIR="${DATA_DIR:-data}"
+CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-5}"
 
-# dataset file name
-MINIDEV_ZIP="llm/mini_dev_data/minidev.zip"
+log() {
+  echo "[INFO] $*"
+}
 
-# where to save the unzip dateset files
-DATA_DIR="data"
+error() {
+  echo "[ERROR] $*" >&2
+  exit 1
+}
 
-if [ ! -f "${MINIDEV_ZIP}" ]; then
-    echo "${MINIDEV_ZIP} not exist."
-    echo "Download dataset..."
+main() {
+  mkdir -p "$(dirname "${MINIDEV_ZIP}")"
 
-    if curl -# -L -o "${MINIDEV_ZIP}" --connect-timeout 5 "${PRIMARY_URL}"; then
-        echo "Download finished."
-        echo
-    else
-        echo "Can't connect to Aliyun, change to Google Drive."
-        if curl -# -L -o "${MINIDEV_ZIP}" --connect-timeout 5 "${SECONDARY_URL}"; then
-            echo "Download finished."
-            echo
-        else
-            echo "Fail to download Mini_dev dataset, check your network"
-            exit 1
-        fi
+  if [ ! -f "${MINIDEV_ZIP}" ]; then
+    log "File ${MINIDEV_ZIP} not found. Attempting to download..."
+    if ! curl -sSL -o "${MINIDEV_ZIP}" --connect-timeout "${CONNECT_TIMEOUT}" "${PRIMARY_URL}"; then
+      log "Primary URL failed. Trying secondary URL..."
+      if ! curl -sSL -o "${MINIDEV_ZIP}" --connect-timeout "${CONNECT_TIMEOUT}" "${SECONDARY_URL}"; then
+        error "Failed to download dataset from all sources. Please check your network connection."
+      fi
     fi
-fi
+    log "Download successful."
+  else
+    log "Dataset ${MINIDEV_ZIP} already exists. Skipping download."
+  fi
 
-echo "Unzip dataset..."
-echo
-mkdir -p "${DATA_DIR}"
-unzip "${MINIDEV_ZIP}" -d "${DATA_DIR}"
+  log "Unzipping dataset to ${DATA_DIR}..."
+  mkdir -p "${DATA_DIR}"
+  unzip -q -o "${MINIDEV_ZIP}" -d "${DATA_DIR}"
 
-echo "Everything is ready~"
+  log "Everything is ready."
+}
+
+main "$@"

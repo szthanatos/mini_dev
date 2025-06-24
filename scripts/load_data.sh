@@ -1,81 +1,92 @@
 #!/usr/bin/env bash
 # ==============================================================================
-#  environment:
-#  - $DSN: protocol://user:pass@host:port/dbname
-#  - $SQL_FILE: /path/to/your/dump.sql
+#  Loads a database dump from an SQL file into MySQL/Postgres.
+#  All configurations can be overridden by environment variables.
 #
-#  usage:
-#  ./import_database.sh
-#  ./import_database.sh "$DSN" "$SQL_FILE"
+#  Usage:
+#    ./load_data.sh [DSN] [SQL_FILE]
 #
-#  eg:
-#  ./import_database.sh "mysql://myuser:pass@host.com:3306/testdb" "../data/minidev/MINIDEV_mysql/BIRD_dev.sql"
-#  ./import_database.sh "postgresql://pguser:pgpass@localhost:5432/proddb" "../data/minidev/MINIDEV_postgresql/BIRD_dev.sql"
+#  Environment Variables:
+#    DSN:      Database connection string.
+#              (Default: "mysql://root:mypwd@localhost:3306/BIRD")
+#    SQL_FILE: Path to the .sql dump file.
+#              (Default: "data/minidev/MINIDEV_mysql/BIRD_dev.sql")
 # ==============================================================================
-set -e
+set -euo pipefail
+
+# --- Configuration ---
+DSN="${DSN:-mysql://root:mypwd@localhost:3306/BIRD}"
+SQL_FILE="${SQL_FILE:-data/minidev/MINIDEV_mysql/BIRD_dev.sql}"
+
+log() {
+  echo "[INFO] $*"
+}
+
+error() {
+  echo "[ERROR] $*" >&2
+  exit 1
+}
 
 parse_dsn() {
-    local DSN="$1"
-    local REGEX="^([a-zA-Z\+]+)://(([^:@]+)(:([^@]*))?@)?([^:/]+)(:([0-9]+))?/(.*)$"
+  local dsn="$1"
+  local regex="^([a-zA-Z\+]+)://(([^:@]+)(:([^@]*))?@)?([^:/]+)(:([0-9]+))?/(.*)$"
 
-    if [[ $DSN =~ $REGEX ]]; then
-        DB_TYPE=${BASH_REMATCH[1]}
-        DB_USER=${BASH_REMATCH[3]}
-        DB_PASSWORD=${BASH_REMATCH[5]}
-        DB_HOST=${BASH_REMATCH[6]}
-        DB_PORT=${BASH_REMATCH[8]}
-        DB_NAME=${BASH_REMATCH[9]}
-    else
-        echo "Invalid DSN URI: $DSN" >&2
-        exit 1
-    fi
+  if [[ ! $dsn =~ $regex ]]; then
+    error "Invalid DSN format: ${dsn}"
+  fi
+
+  DB_TYPE=${BASH_REMATCH[1]}
+  DB_USER=${BASH_REMATCH[3]}
+  DB_PASSWORD=${BASH_REMATCH[5]}
+  DB_HOST=${BASH_REMATCH[6]}
+  DB_PORT=${BASH_REMATCH[8]}
+  DB_NAME=${BASH_REMATCH[9]}
 }
 
 load_data() {
-    local SQL_FILE="$1"
-    echo "loading '$SQL_FILE' into '$DB_NAME'..."
+  local sql_file="$1"
+  log "Loading data from '${sql_file}' into database '${DB_NAME}'..."
 
-    case "$DB_TYPE" in
-    mysql)
-        local port=${DB_PORT:-3306}
-        mysql -h"$DB_HOST" -P"$port" -u"$DB_USER" -p"$DB_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-        mysql -h"$DB_HOST" -P"$port" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" <"$SQL_FILE"
-        ;;
-    postgresql | pgsql)
-        local port=${DB_PORT:-5432}
-        export PGPASSWORD="$DB_PASSWORD"
-        if ! psql -h "$DB_HOST" -p "$port" -U "$DB_USER" -d "$DB_NAME" -c '\q' &>/dev/null; then
-            createdb -h "$DB_HOST" -p "$port" -U "$DB_USER" "$DB_NAME"
-        fi
-        psql -h "$DB_HOST" -p "$port" -U "$DB_USER" -d "$DB_NAME" -f "$SQL_FILE"
-        unset PGPASSWORD
-        ;;
-    *)
-        echo "Invalid DB type '$DB_TYPE'" >&2
-        exit 1
-        ;;
-    esac
+  case "$DB_TYPE" in
+  mysql)
+    local port=${DB_PORT:-3306}
+    # Create DB if not exists
+    mysql -h"$DB_HOST" -P"$port" -u"$DB_USER" -p"$DB_PASSWORD" \
+          -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    mysql -h"$DB_HOST" -P"$port" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" <"$sql_file"
+    ;;
+
+  postgresql | pgsql)
+    local port=${DB_PORT:-5432}
+    export PGPASSWORD="$DB_PASSWORD"
+    # Create DB if not exists
+    if ! psql -h "$DB_HOST" -p "$port" -U "$DB_USER" -lqt | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
+        log "Database '${DB_NAME}' does not exist. Creating it..."
+        createdb -h "$DB_HOST" -p "$port" -U "$DB_USER" "$DB_NAME"
+    fi
+    psql -h "$DB_HOST" -p "$port" -U "$DB_USER" -d "$DB_NAME" -f "$sql_file" >/dev/null
+    unset PGPASSWORD
+    ;;
+
+  *)
+    error "Unsupported database type: '$DB_TYPE'"
+    ;;
+  esac
 }
 
 main() {
-    local dsn_to_use=${1:-$DSN}
-    local sql_file_to_use=${2:-$SQL_FILE}
+  if [ ! -f "$SQL_FILE" ]; then
+    error "SQL file not found: '${SQL_FILE}'"
+  fi
 
-    if [ -z "$dsn_to_use" ]; then
-        echo "DSN must be setup." >&2
-        echo "usage: $0 <DSN_URI> <SQL_FILE_PATH>" >&2
-        exit 1
-    fi
+  log "Using the following configuration:"
+  log "  DSN:      ${DSN}"
+  log "  SQL File: ${SQL_FILE}"
 
-    if [ ! -f "$sql_file_to_use" ]; then
-        echo "No such file: $sql_file_to_use" >&2
-        exit 1
-    fi
+  parse_dsn "$DSN"
+  load_data "$SQL_FILE"
 
-    parse_dsn "$dsn_to_use"
-    load_data "$sql_file_to_use"
-
-    echo "Data import success."
+  log "Data import completed successfully."
 }
 
 main "$@"

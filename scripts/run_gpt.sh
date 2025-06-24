@@ -1,91 +1,77 @@
 #!/usr/bin/env bash
-set -eu
+# ==============================================================================
+#  Run Large Language Model to generate SQL queries based on questions.
+#  All configurations can be overridden by environment variables.
+# ==============================================================================
+set -euo pipefail
 
-# --- API and Model Config ---
-# api format
-PROVIDER="openai" # Options: 'azure' | 'openai'
+# --- Configuration ---
+# API and Model Config
+PROVIDER="${PROVIDER:-openai}"                             # Options: 'azure' | 'openai'
+BASE_URL="${BASE_URL:-https://api.deepseek.com}"           # LLM service endpoint
+API_KEY="${API_KEY:-}"                                     # Your API key (leave empty if not needed)
+API_VERSION="${API_VERSION:-2024-02-01}"                   # API version (mainly for Azure)
+MODEL="${MODEL:-deepseek-chat}"                            # LLM model name
 
-# llm serve's url, e.g.
-# - azure: "https://gcrendpoint.azurewebsites.net/openai/deployments/{MODEL}"
-# - deepseek: "https://api.deepseek.com"
-BASE_URL="https://api.deepseek.com"
+# Data and Path Config
+SQL_DIALECT="${SQL_DIALECT:-SQLite}"                       # Options: 'SQLite' | 'PostgreSQL' | 'MySQL'
+# Input questions file. The name is derived from SQL_DIALECT.
+EVAL_PATH="${EVAL_PATH:-data/minidev/MINIDEV/mini_dev_${SQL_DIALECT,,}.json}"
+DB_ROOT_PATH="${DB_ROOT_PATH:-data/minidev/MINIDEV/dev_databases/}" # Path to SQLite DBs folder
+# Output directory for generated SQL files.
+DATA_OUTPUT_PATH="${DATA_OUTPUT_PATH:-exp_result/}"
 
-API_KEY=""
+# Execution Config
+MODE="${MODE:-mini_dev}"                                   # Options: 'dev' | 'train' | 'mini_dev'
+NUM_THREADS="${NUM_THREADS:-6}"                            # Number of parallel threads
+USE_KNOWLEDGE="${USE_KNOWLEDGE:-True}"                     # Whether to use knowledge from the dataset
+COT="${COT:-True}"                                         # Whether to use Chain-of-Thought prompting
+EXEC_CMD="${EXEC_CMD:-uv run}"                             # Python execution command (e.g., 'uv run', 'conda run -n myenv')
 
-# only need to change when use azure serve
-API_VERSION="2024-02-01"
+log() {
+  echo "[INFO] $*"
+}
 
-# which model your llm serve deployed, e.g.
-# - azure: gpt-4, gpt-4-32k, gpt-4-turbo, gpt-35-turbo, GPT35-turbo-instruct
-# - aliyun: qwq-plus, qwen-max, qwen3-235b-a22b
-# - deepseek platform: deepseek-chat
-# - local llm server: deepseek-ai/DeepSeek-R1, Qwen/Qwen3-32B
-MODEL="Qwen/Qwen3-32B"
+error() {
+  echo "[ERROR] $*" >&2
+  exit 1
+}
 
-# --- Data and Path Config ---
-# eval question json file, depends on your DB type
-EVAL_PATH="data/minidev/MINIDEV/mini_dev_sqlite.json" # _sqlite.json, _mysql.json, _postgresql.json
+main() {
+  mkdir -p "${DATA_OUTPUT_PATH}"
 
-# default sqlite file's path
-DB_ROOT_PATH="data/minidev/MINIDEV/dev_databases/"
+  log "Starting SQL generation with the following configuration:"
+  cat <<-EOF
+  - LLM Provider:         ${PROVIDER}
+  - Model:                ${MODEL}
+  - SQL Dialect:          ${SQL_DIALECT}
+  - Evaluation File:      ${EVAL_PATH}
+  - Output Path:          ${DATA_OUTPUT_PATH}
+  - Threads:              ${NUM_THREADS}
+  - Use Knowledge:        ${USE_KNOWLEDGE}
+  - Chain of Thought:     ${COT}
+EOF
 
-# output path for the generated SQL queries
-DATA_OUTPUT_PATH="exp_result/"
+  read -p "Configuration looks correct? Press Enter to start in 5 seconds or Ctrl+C to cancel..." -t 5 || true
+  echo
 
-# --- Execution Config ---
-# task mode
-MODE="mini_dev" # Options: "dev" | "train" | "mini_dev"
-
-# SQL dialect to run
-# PLEASE NOTE: You have to setup the database information in table_schema.py
-# if you want to run the evaluation script using MySQL or PostgreSQL
-SQL_DIALECT="SQLite" # Options: "SQLite" | "PostgreSQL" | "MySQL"
-
-# number of threads to run in parallel, 1 for single thread
-NUM_THREADS=6
-
-# use evidence in question json file (to let llm have more information) or not
-USE_KNOWLEDGE="True"
-
-# generate cot prompt or not
-COT="True"
-
-# how to execute python script, depends on your package manager
-EXEC_CMD="uv run" # Options: "uv run" | "conda run -n mini_dev"
-
-function main() {
-  echo "ICL setup:"
-  echo "  LLM provider:           ${PROVIDER}"
-  echo "  Model:                  ${MODEL}"
-  echo "  SQL Dialect:            ${SQL_DIALECT}"
-  echo "  Eval path:              ${EVAL_PATH}"
-  echo "  Output path:            ${DATA_OUTPUT_PATH}"
-  echo "  Threads:                ${NUM_THREADS}"
-  echo "  Use knowledge:          ${USE_KNOWLEDGE}"
-  echo "  With chain of thought:  ${COT}"
-  echo ""
-
-  echo "Task will run in 5 seconds. Press Ctrl+C to cancel..."
-  for ((i = 5; i > 0; i--)); do
-    echo "${i}"
-    sleep 1
-  done
-
-  echo "Starting to generate perdict sql"
+  log "Executing python script to generate SQL..."
   ${EXEC_CMD} python -u llm/src/gpt_request.py \
-    --provider ${PROVIDER} \
-    --base_url ${BASE_URL} \
-    --api_key ${API_KEY} \
-    --api_version ${API_VERSION} \
-    --model ${MODEL} \
-    --eval_path ${EVAL_PATH} \
-    --db_root_path ${DB_ROOT_PATH} \
-    --data_output_path ${DATA_OUTPUT_PATH} \
-    --mode ${MODE} \
-    --sql_dialect ${SQL_DIALECT} \
-    --num_threads ${NUM_THREADS} \
-    --use_knowledge ${USE_KNOWLEDGE} \
-    --chain_of_thought ${COT}
+    --provider "${PROVIDER}" \
+    --base_url "${BASE_URL}" \
+    --api_key "${API_KEY}" \
+    --api_version "${API_VERSION}" \
+    --model "${MODEL}" \
+    --eval_path "${EVAL_PATH}" \
+    --db_root_path "${DB_ROOT_PATH}" \
+    --data_output_path "${DATA_OUTPUT_PATH}" \
+    --mode "${MODE}" \
+    --sql_dialect "${SQL_DIALECT}" \
+    --num_threads "${NUM_THREADS}" \
+    --use_knowledge "${USE_KNOWLEDGE}" \
+    --chain_of_thought "${COT}"
+
+  log "SQL generation script finished."
 }
 
 main "$@"
