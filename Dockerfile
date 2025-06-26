@@ -1,4 +1,4 @@
-FROM python:3.12
+FROM python:3.12-slim-bullseye
 LABEL maintainer="sz <zhan.su@greatdb.com>"
 LABEL description="BIRD-bench mini_dev"
 LABEL version="20250601"
@@ -11,7 +11,7 @@ deb https://mirrors.aliyun.com/debian/ bullseye-backports main non-free contrib
 EOF
 
 RUN apt-get update && \
-    apt-get install unzip mariadb-client postgresql-client
+    apt-get install -y curl unzip mariadb-client postgresql-client
 
 ENV UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
@@ -19,7 +19,7 @@ RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
     pip install uv
 
 WORKDIR /app
-COPY pyproject.toml uv.lock .
+COPY pyproject.toml .
 RUN uv sync
 
 COPY . .
