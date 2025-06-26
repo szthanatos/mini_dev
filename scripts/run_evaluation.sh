@@ -14,6 +14,7 @@ set -euo pipefail
 
 # --- Configuration ---
 SQL_DIALECT="${SQL_DIALECT:-SQLite}"             # Options: 'SQLite' | 'PostgreSQL' | 'MySQL'
+DSN="${DSN:-mysql://root:123456@localhost:3306/BIRD}" # DSN for MySQL/PostgreSQL, only used if dialect is not SQLite
 # Path to the JSON file with predicted SQL queries.
 PREDICTED_SQL_PATH="${PREDICTED_SQL_PATH:-exp_result/predict_mini_dev_deepseek-chat_cot_SQLite.json}"
 # Path for evaluation output log. It derives from the prediction file name.
@@ -24,7 +25,6 @@ DB_ROOT_PATH="${DB_ROOT_PATH:-${DATA_PATH}/dev_databases/}" # Path to SQLite DBs
 NUM_CPUS="${NUM_CPUS:-3}"                          # Number of CPUs for evaluation
 META_TIME_OUT="${META_TIME_OUT:-30.0}"             # Max seconds for SQL execution
 EXEC_CMD="${EXEC_CMD:-uv run}"                     # Python execution command (e.g., 'uv run', 'conda run -n myenv')
-DSN="${DSN:-mysql://root:123456@localhost:3306/BIRD}" # DSN for MySQL/PostgreSQL, only used if dialect is not SQLite
 
 # --- Script Paths (Internal) ---
 EVAL_SCRIPTS_DIR="evaluation"

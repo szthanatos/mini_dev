@@ -15,6 +15,7 @@ MODEL="${MODEL:-deepseek-chat}"                            # LLM model name
 
 # Data and Path Config
 SQL_DIALECT="${SQL_DIALECT:-SQLite}"                       # Options: 'SQLite' | 'PostgreSQL' | 'MySQL'
+DSN="${DSN:-mysql://root:mypass@localhost:3306/BIRD}"      # DSN for MySQL/PostgreSQL, only used if dialect is not SQLite
 # Input questions file. The name is derived from SQL_DIALECT.
 EVAL_PATH="${EVAL_PATH:-data/minidev/MINIDEV/mini_dev_${SQL_DIALECT,,}.json}"
 DB_ROOT_PATH="${DB_ROOT_PATH:-data/minidev/MINIDEV/dev_databases/}" # Path to SQLite DBs folder
@@ -67,6 +68,7 @@ EOF
     --data_output_path "${DATA_OUTPUT_PATH}" \
     --mode "${MODE}" \
     --sql_dialect "${SQL_DIALECT}" \
+    --dsn "${DSN}" \
     --num_threads "${NUM_THREADS}" \
     --use_knowledge "${USE_KNOWLEDGE}" \
     --chain_of_thought "${COT}"

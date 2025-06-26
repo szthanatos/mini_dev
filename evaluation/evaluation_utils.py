@@ -1,9 +1,9 @@
 import json
+import sqlite3
 from pathlib import Path
 
 import psycopg2
 import pymysql
-import sqlite3
 
 
 def load_json_data(file_path):
@@ -31,23 +31,24 @@ def load_json(dir):
 
 
 def parse_dsn(dsn: str) -> dict:
-    db_type, domain_ = dsn.split("://")
+    if not dsn:
+        return {}
+    _, domain_ = dsn.split("://")
     domain, db_name = domain_.split("/")
     user_pass, host_port = domain.split("@")
     user, password = user_pass.split(":")
     host, port = host_port.split(":")
     return {
-        "db_type": db_type,
         "database": db_name,
         "user": user,
         "password": password,
         "host": host,
-        "port": port,
+        "port": int(port),
     }
 
 
 # psycopg2   2.9.9
-def connect_postgresql(**kwargs):
+def connect_postgresql(dsn):
     # Open database connection
     # Connect to the database
     # - *dbname*: the database name
@@ -56,12 +57,12 @@ def connect_postgresql(**kwargs):
     # - *password*: password used to authenticate
     # - *host*: database host address (defaults to UNIX socket if not provided)
     # - *port*: connection port number (defaults to 5432 if not provided)
-    db = psycopg2.connect(**kwargs)
+    db = psycopg2.connect(**dsn)
     return db
 
 
 # PyMySQL  1.1.1
-def connect_mysql(**kwargs):
+def connect_mysql(dsn):
     # Open database connection
     # Connect to the database
     # user = (None,)  # The first four arguments is based on DB-API 2.0 recommendation.
@@ -69,7 +70,7 @@ def connect_mysql(**kwargs):
     # host = (None,)
     # database = (None,)
     # port = (0,)
-    db = pymysql.connect(**kwargs)
+    db = pymysql.connect(**dsn)
     return db
 
 
@@ -77,9 +78,9 @@ def connect_db(sql_dialect, db_path, dsn):
     if sql_dialect == "SQLite":
         conn = sqlite3.connect(db_path)
     elif sql_dialect == "MySQL":
-        conn = connect_mysql(**dsn)
+        conn = connect_mysql(dsn)
     elif sql_dialect == "PostgreSQL":
-        conn = connect_postgresql(**dsn)
+        conn = connect_postgresql(dsn)
     else:
         raise ValueError("Unsupported SQL dialect")
     return conn

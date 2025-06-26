@@ -1,6 +1,7 @@
 import sqlite3
-import pymysql
+
 import psycopg2
+import pymysql
 
 db_table_map = {
     "debit_card_specializing": [
@@ -157,17 +158,18 @@ def generate_schema_prompt_sqlite(db_path, num_rows=None):
     return schema_prompt
 
 
-def connect_mysql():
+def connect_mysql(dsn: dict):
     # Open database connection
-    # Connect to the database"
-    db = pymysql.connect(
-        host="localhost",
-        user="root",
-        password="YOUR_PASSWORD",
-        database="BIRD",
-        unix_socket="/tmp/mysql.sock",
-        # port=3306,
-    )
+    # Connect to the database
+    # db = pymysql.connect(
+    #     host="localhost",
+    #     user="root",
+    #     password="YOUR_PASSWORD",
+    #     database="BIRD",
+    #     unix_socket="/tmp/mysql.sock",
+    #     # port=3306,
+    # )
+    db = pymysql.connect(**dsn)
     return db
 
 
@@ -210,8 +212,8 @@ def format_postgresql_create_table(table_name, columns_info):
     return "\n".join(lines)
 
 
-def generate_schema_prompt_mysql(db_path):
-    db = connect_mysql()
+def generate_schema_prompt_mysql(db_path, dsn):
+    db = connect_mysql(dsn)
     cursor = db.cursor()
     db_name = db_path.split("/")[-1].split(".sqlite")[0]
     tables = [table for table in db_table_map[db_name]]
@@ -226,17 +228,18 @@ def generate_schema_prompt_mysql(db_path):
     return schema_prompt
 
 
-def connect_postgresql():
+def connect_postgresql(dsn: dict):
     # Open database connection
     # Connect to the database
-    db = psycopg2.connect(
-        "dbname=BIRD user=root host=localhost password=YOUR_PASSWORD port=5432"
-    )
+    # db = psycopg2.connect(
+    #     "dbname=BIRD user=root host=localhost password=YOUR_PASSWORD port=5432"
+    # )
+    db = psycopg2.connect(**dsn)
     return db
 
 
-def generate_schema_prompt_postgresql(db_path):
-    db = connect_postgresql()
+def generate_schema_prompt_postgresql(db_path, dsn):
+    db = connect_postgresql(dsn)
     cursor = db.cursor()
     db_name = db_path.split("/")[-1].split(".sqlite")[0]
     tables = [table for table in db_table_map[db_name]]
@@ -257,12 +260,12 @@ def generate_schema_prompt_postgresql(db_path):
     return schema_prompt
 
 
-def generate_schema_prompt(sql_dialect, db_path=None, num_rows=None):
+def generate_schema_prompt(sql_dialect, db_path=None, num_rows=None, dsn: dict = None):
     if sql_dialect == "SQLite":
         return generate_schema_prompt_sqlite(db_path, num_rows)
     elif sql_dialect == "MySQL":
-        return generate_schema_prompt_mysql(db_path)
+        return generate_schema_prompt_mysql(db_path, dsn)
     elif sql_dialect == "PostgreSQL":
-        return generate_schema_prompt_postgresql(db_path)
+        return generate_schema_prompt_postgresql(db_path, dsn)
     else:
         raise ValueError("Unsupported SQL dialect: {}".format(sql_dialect))

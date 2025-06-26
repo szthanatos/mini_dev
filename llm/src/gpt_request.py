@@ -17,7 +17,7 @@ class Config:
     Encapsulates all script configurations.
     """
     # API and Model Config
-    provider: str # 'azure' | 'openai'
+    provider: str  # 'azure' | 'openai'
     base_url: str
     api_key: str
     api_version: str
@@ -34,6 +34,8 @@ class Config:
     chain_of_thought: bool = False
     num_threads: int = 3
     sql_dialect: str = "SQLite"
+    dsn: str = ""
+
 
 @dataclass
 class Task:
@@ -54,8 +56,9 @@ def prepare_tasks(config: Config):
         eval_data = json.load(f)
 
     tasks = []
+    dsn = parse_dsn(config.dsn)
     for i, data in enumerate(eval_data):
-        db_path = Path(config.db_root_path )/ data["db_id"] / f"{data['db_id']}.sqlite"
+        db_path = Path(config.db_root_path) / data["db_id"] / f"{data['db_id']}.sqlite"
         knowledge = data.get("evidence") if config.use_knowledge else None
 
         prompt = generate_combined_prompts_one(
@@ -63,10 +66,12 @@ def prepare_tasks(config: Config):
             question=data["question"],
             sql_dialect=config.sql_dialect,
             knowledge=knowledge,
+            dsn=dsn,
         )
         tasks.append(Task(index=i, question=data["question"], db_path=db_path, prompt=prompt))
 
     return tasks
+
 
 def process_task(task: Task, client: LLMClient) -> tuple[str, int]:
     """
@@ -79,6 +84,7 @@ def process_task(task: Task, client: LLMClient) -> tuple[str, int]:
 
     return sql_result, task.index
 
+
 def generate_sql_file(results: list, output_path: Path):
     """
     Saves the generated SQL results to a JSON file, sorted by index.
@@ -89,10 +95,11 @@ def generate_sql_file(results: list, output_path: Path):
     results.sort(key=lambda x: x[1])
     output_dict = {i: sql for i, (sql, _) in enumerate(results)}
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     with open(output_path, "w") as f:
         json.dump(output_dict, f, indent=4)
     print(f"Successfully saved results to {output_path}")
+
 
 def load_config():
     args_parser = argparse.ArgumentParser()
@@ -113,6 +120,7 @@ def load_config():
     # Execution Config
     args_parser.add_argument("--mode", type=str, default="dev")
     args_parser.add_argument("--sql_dialect", type=str, default="SQLite")
+    args_parser.add_argument("--dsn", type=str, default="")
     args_parser.add_argument("--num_threads", type=int, default=3)
     args_parser.add_argument("--use_knowledge", type=str, default="False")
     args_parser.add_argument("--chain_of_thought", type=str)
@@ -130,10 +138,29 @@ def load_config():
         data_output_path=args.data_output_path,
         mode=args.mode,
         sql_dialect=args.sql_dialect,
+        dsn=args.dsn,
         num_threads=args.num_threads,
         use_knowledge=args.use_knowledge,
         chain_of_thought=args.chain_of_thought,
     )
+
+
+def parse_dsn(dsn: str) -> dict:
+    if not dsn:
+        return {}
+    _, domain_ = dsn.split("://")
+    domain, db_name = domain_.split("/")
+    user_pass, host_port = domain.split("@")
+    user, password = user_pass.split(":")
+    host, port = host_port.split(":")
+    return {
+        "database": db_name,
+        "user": user,
+        "password": password,
+        "host": host,
+        "port": int(port),
+    }
+
 
 def main():
     cfg = load_config()
@@ -146,7 +173,7 @@ def main():
     )
     tasks = prepare_tasks(cfg)
     all_responses = []
-    
+
     with ThreadPoolExecutor(max_workers=cfg.num_threads) as executor:
         future_to_task = {executor.submit(process_task, task, llm): task for task in tasks}
 
@@ -158,9 +185,9 @@ def main():
                 print(f"A task generated an exception: {e}")
 
     cot_suffix = "_cot" if cfg.chain_of_thought else ""
-    output_file =(
-        Path(cfg.data_output_path) /
-        f"predict_{cfg.mode}_{cfg.model}{cot_suffix}_{cfg.sql_dialect}.json"
+    output_file = (
+            Path(cfg.data_output_path) /
+            f"predict_{cfg.mode}_{cfg.model}{cot_suffix}_{cfg.sql_dialect}.json"
     )
 
     generate_sql_file(results=all_responses, output_path=output_file)
